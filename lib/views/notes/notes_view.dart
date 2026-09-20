@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:mynotes/constant/routes.dart';
 import 'package:mynotes/enums/menu_action.dart';
 import 'package:mynotes/services/auth/auth_service.dart';
-import 'package:mynotes/services/cloud/cloud_note.dart';
-import 'package:mynotes/services/cloud/firebase_cloud_storage.dart';
+import 'package:mynotes/services/cloud/bloc/notes_bloc.dart';
+import 'package:mynotes/services/cloud/bloc/notes_event.dart';
+import 'package:mynotes/services/cloud/bloc/notes_state.dart';
 import 'package:mynotes/utilities/dialogs/logout_dialog.dart';
 import 'package:mynotes/views/notes/notes_list_view.dart';
 
@@ -15,13 +17,12 @@ class NotesView extends StatefulWidget {
 }
 
 class _NotesViewState extends State<NotesView> {
-  late final FirebaseCloudStorage _notesService;
   String get userId => AuthService.firebase().currentUser!.id;
 
   @override
   void initState() {
-    _notesService = FirebaseCloudStorage();
     super.initState();
+    context.read<NotesBloc>().add(const NotesEventLoad());
   }
 
   @override
@@ -63,28 +64,27 @@ class _NotesViewState extends State<NotesView> {
           ),
         ],
       ),
-      body: StreamBuilder<Iterable<CloudNote>>(
-        stream: _notesService.allNotes(ownerUserId: userId),
-        initialData: const [],
-        builder: (context, snapshot) {
-          if (snapshot.hasError) {
-            return Center(
-              child: Text('Could not load notes: ${snapshot.error}'),
+      body: BlocBuilder<NotesBloc, NotesState>(
+        builder: (context, state) {
+          if (state is NotesStateError) {
+            return Center(child: Text('Could not load notes: ${state.error}'));
+          }
+
+          if (state is NotesStateLoaded) {
+            return NoteListView(
+              notes: state.notes,
+              onDeleteNote: (note) {
+                context.read<NotesBloc>().add(NotesEventDelete(note));
+              },
+              onTap: (note) {
+                Navigator.of(
+                  context,
+                ).pushNamed(createOrUpdateNoteRoutes, arguments: note);
+              },
             );
           }
 
-          final allNotes = snapshot.data ?? const <CloudNote>[];
-          return NoteListView(
-            notes: allNotes,
-            onDeleteNote: (note) async {
-              await _notesService.deleteNote(documentId: note.documentId);
-            },
-            onTap: (note) {
-              Navigator.of(
-                context,
-              ).pushNamed(createOrUpdateNoteRoutes, arguments: note);
-            },
-          );
+          return const Center(child: CircularProgressIndicator());
         },
       ),
     );
